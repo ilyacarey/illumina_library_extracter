@@ -1,0 +1,6 @@
+name: illumina-tfbs-nf
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - fastp
