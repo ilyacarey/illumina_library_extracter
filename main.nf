@@ -26,31 +26,6 @@ if( !params.read1 || !params.read2 ) {
   System.exit(1)
 }
 
-/*
- * Defaults
- */
-params.sample = params.sample ?: 'sample'
-params.outdir = params.outdir ?: 'results'
-params.cpus   = (params.cpus ?: 8) as int
-
-// Inputs/config files
-params.barcodes_fasta   = params.barcodes_fasta ?: 'barcodes_anchored.fasta'
-
-// Your orient anchor (3' primer) from earlier
-params.orient_3p_anchor = params.orient_3p_anchor ?: 'GATCTATGAGCAAAGGAGAAGAAC$'
-
-// Extraction flanks (linked adapter LEFT...RIGHT), exact TFBS length
-params.left_flank      = params.left_flank ?: 'TTTACGGCTAGCTCAGTCCTAGGTACAATGCTAGCGAATTC'
-params.right_flank     = params.right_flank ?: 'GGATCCAGC'
-params.tfbs_len        = (params.tfbs_len ?: 20) as int
-params.extract_overlap = (params.extract_overlap ?: 9) as int
-params.cutadapt_e      = (params.cutadapt_e ?: 0.05) as double
-
-// FLASH params (from your earlier usage; tune if needed)
-params.flash_min_overlap = (params.flash_min_overlap ?: 20) as int
-params.flash_max_overlap = (params.flash_max_overlap ?: 150) as int
-params.flash_mismatch    = (params.flash_mismatch ?: 0.1) as double
-params.flash_phred       = (params.flash_phred ?: 33) as int
 
 /*
  * Single-sample input channel
@@ -71,7 +46,7 @@ barcodes_ch = Channel.value(barcodes_file)
  */
 process FASTP {
   tag "${sample_id}"
-  publishDir "${params.outdir}/fastp/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/01_fastp/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
@@ -104,7 +79,7 @@ process FASTP {
 
 process FLASH_MERGE {
   tag "${sample_id}"
-  publishDir "${params.outdir}/flash/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/02_flash/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
@@ -134,7 +109,7 @@ process FLASH_MERGE {
 
 process ORIENT_READS {
   tag "${sample_id}"
-  publishDir "${params.outdir}/orient/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/03_orient/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
@@ -161,7 +136,7 @@ process ORIENT_READS {
 
 process DEMUX {
   tag "${sample_id}"
-  publishDir "${params.outdir}/demux/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/04_demux/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
@@ -190,7 +165,7 @@ process DEMUX {
 
 process EXTRACT_TFBS {
   tag "${sample_id}:${bin_fastq.simpleName}"
-  publishDir "${params.outdir}/extract/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/05_extract/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
@@ -217,7 +192,7 @@ process EXTRACT_TFBS {
 
 process COUNT_TFBS {
   tag "${sample_id}:bin${bin_num}"
-  publishDir "${params.outdir}/counts/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/06_counts/${sample_id}", mode: 'copy'
   cpus 1
 
   input:
@@ -257,7 +232,7 @@ process COUNT_TFBS {
 
 process MERGE_COUNTS {
   tag "${sample_id}"
-  publishDir "${params.outdir}/counts/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/07_merged_counts/${sample_id}", mode: 'copy'
   cpus 1
 
   input:
