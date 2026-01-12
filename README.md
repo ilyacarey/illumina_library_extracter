@@ -1,6 +1,6 @@
 This Nextflow pipeline counts library variants per bin inline barcode from raw paired Illumina reads. 
 
-Key steps:
+**Key steps:**
 
 -fastp for quality control and adapter trimming
 
@@ -14,5 +14,31 @@ Key steps:
 
 -a script to count the frequency of each sequence in each bin
 
+
 The final outputs are .tsv files with sequence frequency counts per bin, as well as a .tsv with all the bins merged. 
-A multiqc report is also generated.
+A multiqc report is also generated
+
+
+
+**Requirements**:
+
+-java
+
+-nextflow
+
+-conda
+
+To run this script, update the relevant parameters in the config file, then run in bash by cloning or directly from repo:
+
+
+git clone https://github.com/ilyacarey/illumina_library_extracter.git
+cd REPO
+nextflow run main.nf -profile docker
+
+or
+
+nextflow run ilyacarey/illumina_library_extracter -profile conda 
+
+
+
+.
