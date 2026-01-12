@@ -16,7 +16,7 @@ This Nextflow pipeline counts library variants per bin from raw paired Illumina 
 
 
 The final outputs are .tsv files with sequence frequency counts per bin, as well as a .tsv with all the bins merged. 
-A multiqc report is also generated
+A multiqc report is also generated.
 
 
 
@@ -28,7 +28,7 @@ A multiqc report is also generated
 
 -conda
 
-To run this script, update the relevant parameters in the config file, then run in bash by cloning or directly from repo:
+To run this script, update the relevant parameters in the config file (or when running in bash), then run in bash by cloning or directly from repo:
 
 
 git clone https://github.com/ilyacarey/illumina_library_extracter.git
@@ -40,5 +40,3 @@ or
 nextflow run ilyacarey/illumina_library_extracter -profile conda 
 
 
-
-.
