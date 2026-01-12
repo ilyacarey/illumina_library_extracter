@@ -179,12 +179,17 @@ process EXTRACT_TFBS {
     --no-indels \
     -e ${params.cutadapt_e} \
     --overlap ${params.extract_overlap} \
-    -g "${params.left_flank}...${params.right_flank}" \
-    --discard-untrimmed \
+    -g "^${params.left_flank}" \
+    -a "${params.right_flank}$" \
     -m ${params.tfbs_len} -M ${params.tfbs_len} \
+    --discard-untrimmed \
+    --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
+    --too-short-output ${bin_fastq.simpleName}.too_short.fastq.gz \
+    --too-long-output ${bin_fastq.simpleName}.too_long.fastq.gz \
     -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
     ${bin_fastq} \
     > ${bin_fastq.simpleName}.extract.log
+
   """
 }
 
