@@ -1,6 +1,7 @@
 This Nextflow pipeline extracts a specific region (e.g., a variant library) from raw paired Illumina reads. 
 
 Key steps:
+
 -fastp for quality control and adapter trimming
 
 -flash2 for merging reads
