@@ -200,8 +200,6 @@ process EXTRACT_TFBS {
     """
 }
 
-}
-
 process COUNT_TFBS {
   tag "${sample_id}:bin${bin_num}"
   publishDir "${params.outdir}/06_counts/${sample_id}", mode: 'copy'
