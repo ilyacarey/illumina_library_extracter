@@ -1,4 +1,4 @@
-This Nextflow pipeline extracts a specific region (e.g., a variant library) from raw paired Illumina reads. 
+This Nextflow pipeline counts library variants per bin inline barcode from raw paired Illumina reads. 
 
 Key steps:
 
@@ -14,5 +14,5 @@ Key steps:
 
 -a script to count the frequency of each sequence in each bin
 
-The final outputs .tsv files with sequence frequency counts per bin, as well as a .tsv with all the bins merged. 
+The final outputs are .tsv files with sequence frequency counts per bin, as well as a .tsv with all the bins merged. 
 A multiqc report is also generated.
