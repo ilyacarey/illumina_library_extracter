@@ -190,7 +190,6 @@ process EXTRACT_TFBS {
       -g '${left}' \
       -a '${right}' \
       -m ${params.tfbs_len} -M ${params.tfbs_len} \
-      --discard-untrimmed \
       --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
       --too-short-output ${bin_fastq.simpleName}.too_short.fastq.gz \
       --too-long-output ${bin_fastq.simpleName}.too_long.fastq.gz \
