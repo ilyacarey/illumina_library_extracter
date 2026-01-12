@@ -199,40 +199,32 @@ process EXTRACT_TFBS {
     """
 }
 
-process COUNT_TFBS {
-  tag "${sample_id}:bin${bin_num}"
-  publishDir "${params.outdir}/06_counts/${sample_id}", mode: 'copy'
-  cpus 1
+process EXTRACT_TFBS {
+  tag "${sample_id}:${bin_fastq.simpleName}"
+  publishDir "${params.outdir}/05_extract/${sample_id}", mode: 'copy'
+  cpus params.cpus
 
   input:
-    tuple val(sample_id), val(bin_num), path(tfbs_fastq)
+    tuple val(sample_id), path(bin_fastq)
 
   output:
-    tuple val(sample_id), path("${tfbs_fastq.simpleName}.counts.tsv")
+    // Added emit: reads
+    tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
+    path "*.extract.log", emit: log
 
   script:
   """
-  python - << 'PY'
-  import gzip
-  from collections import Counter
-
-  tfbs_path = "${tfbs_fastq}"
-  out_path  = "${tfbs_fastq.simpleName}.counts.tsv"
-  bin_num   = "${bin_num}"
-
-  counts = Counter()
-  with gzip.open(tfbs_path, "rt") as fh:
-    for i, line in enumerate(fh):
-      if i % 4 == 1:
-        seq = line.strip()
-        if seq:
-          counts[seq] += 1
-
-  with open(out_path, "w") as out:
-    out.write("bin\\tsequence\\tcount\\n")
-    for seq, c in sorted(counts.items(), key=lambda x: (-x[1], x[0])):
-      out.write(f"{bin_num}\\t{seq}\\t{c}\\n")
-  PY
+  cutadapt \
+    -j ${task.cpus} \
+    --no-indels \
+    -e ${params.cutadapt_e} \
+    --overlap ${params.extract_overlap} \
+    -g "${params.left_flank}...${params.right_flank}" \
+    --discard-untrimmed \
+    -m ${params.tfbs_len} -M ${params.tfbs_len} \
+    -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
+    ${bin_fastq} \
+    > ${bin_fastq.simpleName}.extract.log
   """
 }
 
@@ -307,7 +299,7 @@ workflow {
 
   // Derive numeric bin from filename
   // Use .reads output
-  ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, untrimmed_fastq, too_short_fastq, too_long_fastq, extract_log ->
+  ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, extract_log ->
     def m = (tfbs_fastq.simpleName =~ /(\d+)/)
     def bin = m.find() ? m.group(1) : 'NA'
     tuple(sample_id, bin, tfbs_fastq)
