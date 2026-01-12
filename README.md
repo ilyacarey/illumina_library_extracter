@@ -2,7 +2,9 @@ This Nextflow pipeline extracts a specific region (e.g., a variant library) from
 
 Key steps:
 -fastp for quality control and adapter trimming
+
 -flash2 for merging reads
+
 -cutadapt to orient reads using the inline barcodes and the reverse primer
 -cutadapt to demultiplex reads with inline barcodes
 -cutadapt to extract a library region using flanking sequences
