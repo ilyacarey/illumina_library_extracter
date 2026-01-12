@@ -14,14 +14,6 @@ if( !params.read1 || !params.read2 ) {
       --sample <sample_name> \\
       --barcodes_fasta <barcodes_anchored.fasta> \\
       --outdir results
-
-  Example:
-    nextflow run main.nf -profile conda \\
-      --read1 NG-A3433_CarR_de_novo_libLAJ7476_1.fastq.gz \\
-      --read2 NG-A3433_CarR_de_novo_libLAJ7476_2.fastq.gz \\
-      --sample NG-A3433 \\
-      --barcodes_fasta barcodes_anchored.fasta \\
-      --outdir results
   """
   System.exit(1)
 }
@@ -53,11 +45,10 @@ process FASTP {
     tuple val(sample_id), path(read1), path(read2)
 
   output:
-    tuple val(sample_id),
-      path("${sample_id}_1.fastp.fastq.gz"),
-      path("${sample_id}_2.fastp.fastq.gz"),
-      path("${sample_id}.fastp.html"),
-      path("${sample_id}.fastp.json")
+    // Added emit: reads
+    tuple val(sample_id), path("${sample_id}_1.fastp.fastq.gz"), path("${sample_id}_2.fastp.fastq.gz"), path("${sample_id}.fastp.html"), path("${sample_id}.fastp.json"), emit: reads
+    path("*.json"), emit: log 
+    path("*.html")
 
   script:
   """
@@ -77,33 +68,34 @@ process FASTP {
   """
 }
 
-process FLASH_MERGE {
+// Renamed process to match workflow call
+process FLASH2_MERGE {
   tag "${sample_id}"
-  publishDir "${params.outdir}/02_flash/${sample_id}", mode: 'copy'
+  publishDir "${params.outdir}/02_flash2/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
+    // Input tuple must match the output of FASTP (5 elements) or use just what is needed
     tuple val(sample_id), path(r1), path(r2), path(html), path(json)
 
   output:
-    tuple val(sample_id), path("${sample_id}.extendedFrags.fastq.gz")
+    // Added emit: reads
+    tuple val(sample_id), path("${sample_id}.extendedFrags.fastq.gz"), emit: reads
+    path "${sample_id}.flash.log", emit: log
 
   script:
   """
-  mkdir -p flash_out
-
-  flash \
+  # Added log redirection (> ... 2>&1) so the log file is actually created
+  flash2 \
     -t ${task.cpus} \
     -m ${params.flash_min_overlap} \
     -M ${params.flash_max_overlap} \
     -x ${params.flash_mismatch} \
     -p ${params.flash_phred} \
     -o ${sample_id} \
-    -d flash_out \
-    ${r1} ${r2}
+    ${r1} ${r2} > ${sample_id}.flash.log 2>&1
 
-  gzip -f flash_out/${sample_id}.extendedFrags.fastq
-  mv flash_out/${sample_id}.extendedFrags.fastq.gz ${sample_id}.extendedFrags.fastq.gz
+  gzip -f ${sample_id}.extendedFrags.fastq
   """
 }
 
@@ -117,7 +109,9 @@ process ORIENT_READS {
     path barcodes
 
   output:
-    tuple val(sample_id), path("${sample_id}.merged.oriented.fastq.gz"), path("${sample_id}.orient.log")
+    // Added emit: reads
+    tuple val(sample_id), path("${sample_id}.merged.oriented.fastq.gz"), path("${sample_id}.orient.log"), emit: reads
+    path "${sample_id}.orient.log", emit: log
 
   script:
   """
@@ -144,7 +138,9 @@ process DEMUX {
     path barcodes
 
   output:
-    tuple val(sample_id), path("demux/*.fastq.gz"), path("${sample_id}.demux.log")
+    // Added emit: reads
+    tuple val(sample_id), path("demux/*.fastq.gz"), path("${sample_id}.demux.log"), emit: reads
+    path "${sample_id}.demux.log", emit: log
 
   script:
   """
@@ -172,7 +168,9 @@ process EXTRACT_TFBS {
     tuple val(sample_id), path(bin_fastq)
 
   output:
-    tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log")
+    // Added emit: reads
+    tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
+    path "*.extract.log", emit: log
 
   script:
   """
@@ -214,7 +212,6 @@ process COUNT_TFBS {
   counts = Counter()
   with gzip.open(tfbs_path, "rt") as fh:
     for i, line in enumerate(fh):
-      # FASTQ sequence line is every 4 lines: 2nd line in each record (i % 4 == 1)
       if i % 4 == 1:
         seq = line.strip()
         if seq:
@@ -222,7 +219,6 @@ process COUNT_TFBS {
 
   with open(out_path, "w") as out:
     out.write("bin\\tsequence\\tcount\\n")
-    # sort by count descending, then sequence (stable, nice for diffs)
     for seq, c in sorted(counts.items(), key=lambda x: (-x[1], x[0])):
       out.write(f"{bin_num}\\t{seq}\\t{c}\\n")
   PY
@@ -242,16 +238,37 @@ process MERGE_COUNTS {
     path("all_bins.counts.tsv")
 
   script:
+  // Using a cleaner bash loop to safely handle list of files
+  def files_str = count_files.join(' ')
   """
   set -euo pipefail
+  
+  # Grab header from first file
+  first_file=\$(echo "${files_str}" | awk '{print \$1}')
+  head -n 1 \$first_file > all_bins.counts.tsv
 
-  head -n 1 ${count_files[0]} > all_bins.counts.tsv
-  for f in ${count_files}; do
+  # Loop and skip header
+  for f in ${files_str}; do
     tail -n +2 "\$f" >> all_bins.counts.tsv
   done
   """
 }
 
+
+process MULTIQC {
+    publishDir "${params.outdir}/00_reports", mode: 'copy'
+
+    input:
+    path multiqc_files
+
+    output:
+    path "multiqc_report.html"
+
+    script:
+    """
+    multiqc .
+    """
+}
 
 /*
  * Workflow wiring
@@ -259,13 +276,17 @@ process MERGE_COUNTS {
 workflow {
 
   ch_fastp  = FASTP(ch_sample)
-  ch_merged = FLASH_MERGE(ch_fastp)
+  // Use .reads output specifically
+  ch_merged = FLASH2_MERGE(ch_fastp.reads)
 
-  ch_oriented = ORIENT_READS(ch_merged, barcodes_ch)
-  ch_demux    = DEMUX(ch_oriented, barcodes_ch)
+  // Use .reads output
+  ch_oriented = ORIENT_READS(ch_merged.reads, barcodes_ch)
+  // Use .reads output
+  ch_demux    = DEMUX(ch_oriented.reads, barcodes_ch)
 
   // Flatten demux bins, skip unknown
-  ch_bins = ch_demux.flatMap { sample_id, files, demux_log ->
+  // ch_demux.reads is now the tuple containing the file list
+  ch_bins = ch_demux.reads.flatMap { sample_id, files, demux_log ->
     files
       .findAll { it.name != 'unknown.fastq.gz' }
       .collect { f -> tuple(sample_id, f) }
@@ -273,8 +294,9 @@ workflow {
 
   ch_tfbs = EXTRACT_TFBS(ch_bins)
 
-  // Derive numeric bin from filename in Groovy (avoids bash parsing problems)
-  ch_counts_in = ch_tfbs.map { sample_id, tfbs_fastq, extract_log ->
+  // Derive numeric bin from filename
+  // Use .reads output
+  ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, extract_log ->
     def m = (tfbs_fastq.simpleName =~ /(\d+)/)
     def bin = m.find() ? m.group(1) : 'NA'
     tuple(sample_id, bin, tfbs_fastq)
@@ -286,4 +308,16 @@ workflow {
     .groupTuple()
     .map { sample_id, files -> tuple(sample_id, files) }
     | MERGE_COUNTS
+
+  // 1. Gather logs from all steps
+  ch_reports = Channel.empty()
+      .mix(ch_fastp.log)
+      .mix(ch_merged.log)
+      .mix(ch_oriented.log)
+      .mix(ch_demux.log)
+      .mix(ch_tfbs.log)
+      .collect() 
+
+  // 2. Generate Report
+  MULTIQC(ch_reports)
 }
