@@ -168,46 +168,6 @@ process EXTRACT_TFBS {
     tuple val(sample_id), path(bin_fastq)
 
   output:
-    tuple val(sample_id),
-          path("${bin_fastq.simpleName}.tfbs.fastq.gz"),
-          path("${bin_fastq.simpleName}.untrimmed.fastq.gz"),
-          path("${bin_fastq.simpleName}.too_short.fastq.gz"),
-          path("${bin_fastq.simpleName}.too_long.fastq.gz"),
-          path("${bin_fastq.simpleName}.extract.log"),
-          emit: reads
-
-    path("${bin_fastq.simpleName}.extract.log"), emit: log
-
-  script:
-    def left  = "^${params.left_flank}"
-    def right = "${params.right_flank}" + '$'
-    """
-    cutadapt \
-      -j ${task.cpus} \
-      --no-indels \
-      -e ${params.cutadapt_e} \
-      --overlap ${params.extract_overlap} \
-      -g '${left}' \
-      -a '${right}' \
-      -m ${params.tfbs_len} -M ${params.tfbs_len} \
-      --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
-      --too-short-output ${bin_fastq.simpleName}.too_short.fastq.gz \
-      --too-long-output ${bin_fastq.simpleName}.too_long.fastq.gz \
-      -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
-      ${bin_fastq} \
-      > ${bin_fastq.simpleName}.extract.log
-    """
-}
-
-process EXTRACT_TFBS {
-  tag "${sample_id}:${bin_fastq.simpleName}"
-  publishDir "${params.outdir}/05_extract/${sample_id}", mode: 'copy'
-  cpus params.cpus
-
-  input:
-    tuple val(sample_id), path(bin_fastq)
-
-  output:
     // Added emit: reads
     tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
     path "*.extract.log", emit: log
@@ -225,6 +185,43 @@ process EXTRACT_TFBS {
     -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
     ${bin_fastq} \
     > ${bin_fastq.simpleName}.extract.log
+  """
+}
+
+process COUNT_TFBS {
+  tag "${sample_id}:bin${bin_num}"
+  publishDir "${params.outdir}/06_counts/${sample_id}", mode: 'copy'
+  cpus 1
+
+  input:
+    tuple val(sample_id), val(bin_num), path(tfbs_fastq)
+
+  output:
+    tuple val(sample_id), path("${tfbs_fastq.simpleName}.counts.tsv")
+
+  script:
+  """
+  python - << 'PY'
+  import gzip
+  from collections import Counter
+
+  tfbs_path = "${tfbs_fastq}"
+  out_path  = "${tfbs_fastq.simpleName}.counts.tsv"
+  bin_num   = "${bin_num}"
+
+  counts = Counter()
+  with gzip.open(tfbs_path, "rt") as fh:
+    for i, line in enumerate(fh):
+      if i % 4 == 1:
+        seq = line.strip()
+        if seq:
+          counts[seq] += 1
+
+  with open(out_path, "w") as out:
+    out.write("bin\\tsequence\\tcount\\n")
+    for seq, c in sorted(counts.items(), key=lambda x: (-x[1], x[0])):
+      out.write(f"{bin_num}\\t{seq}\\t{c}\\n")
+  PY
   """
 }
 
