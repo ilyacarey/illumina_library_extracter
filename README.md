@@ -32,8 +32,13 @@ To run this script, update the relevant parameters in the config file (or when r
 
 
 git clone https://github.com/ilyacarey/illumina_library_extracter.git
+
 cd REPO
-nextflow run main.nf -profile docker
+
+nextflow run main.nf -profile conda
+
+
+
 
 or remotely (in which case you must have inline barcodes fasta file available):
 
