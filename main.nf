@@ -168,7 +168,6 @@ process EXTRACT_TFBS {
     tuple val(sample_id), path(bin_fastq)
 
   output:
-    // Emit all per-bin outputs together (best for downstream counting + reporting)
     tuple val(sample_id),
           path("${bin_fastq.simpleName}.tfbs.fastq.gz"),
           path("${bin_fastq.simpleName}.untrimmed.fastq.gz"),
@@ -176,6 +175,7 @@ process EXTRACT_TFBS {
           path("${bin_fastq.simpleName}.too_long.fastq.gz"),
           path("${bin_fastq.simpleName}.extract.log"),
           emit: reads
+    path("${bin_fastq.simpleName}.extract.log"), emit: log
 
   script:
   """
@@ -184,8 +184,8 @@ process EXTRACT_TFBS {
     --no-indels \
     -e ${params.cutadapt_e} \
     --overlap ${params.extract_overlap} \
-    -g "^${params.left_flank}" \
-    -a "${params.right_flank}$" \
+    -g "${left}" \
+    -a "${right}" \
     -m ${params.tfbs_len} -M ${params.tfbs_len} \
     --discard-untrimmed \
     --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
@@ -194,8 +194,9 @@ process EXTRACT_TFBS {
     -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
     ${bin_fastq} \
     > ${bin_fastq.simpleName}.extract.log
-
   """
+}
+
 }
 
 process COUNT_TFBS {
