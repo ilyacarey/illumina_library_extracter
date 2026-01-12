@@ -307,7 +307,7 @@ workflow {
 
   // Derive numeric bin from filename
   // Use .reads output
-  ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, extract_log ->
+  ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, untrimmed_fastq, too_short_fastq, too_long_fastq, extract_log ->
     def m = (tfbs_fastq.simpleName =~ /(\d+)/)
     def bin = m.find() ? m.group(1) : 'NA'
     tuple(sample_id, bin, tfbs_fastq)
