@@ -175,26 +175,29 @@ process EXTRACT_TFBS {
           path("${bin_fastq.simpleName}.too_long.fastq.gz"),
           path("${bin_fastq.simpleName}.extract.log"),
           emit: reads
+
     path("${bin_fastq.simpleName}.extract.log"), emit: log
 
   script:
-  """
-  cutadapt \
-    -j ${task.cpus} \
-    --no-indels \
-    -e ${params.cutadapt_e} \
-    --overlap ${params.extract_overlap} \
-    -g "${left}" \
-    -a "${right}" \
-    -m ${params.tfbs_len} -M ${params.tfbs_len} \
-    --discard-untrimmed \
-    --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
-    --too-short-output ${bin_fastq.simpleName}.too_short.fastq.gz \
-    --too-long-output ${bin_fastq.simpleName}.too_long.fastq.gz \
-    -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
-    ${bin_fastq} \
-    > ${bin_fastq.simpleName}.extract.log
-  """
+    def left  = "^${params.left_flank}"
+    def right = "${params.right_flank}" + '$'
+    """
+    cutadapt \
+      -j ${task.cpus} \
+      --no-indels \
+      -e ${params.cutadapt_e} \
+      --overlap ${params.extract_overlap} \
+      -g '${left}' \
+      -a '${right}' \
+      -m ${params.tfbs_len} -M ${params.tfbs_len} \
+      --discard-untrimmed \
+      --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
+      --too-short-output ${bin_fastq.simpleName}.too_short.fastq.gz \
+      --too-long-output ${bin_fastq.simpleName}.too_long.fastq.gz \
+      -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
+      ${bin_fastq} \
+      > ${bin_fastq.simpleName}.extract.log
+    """
 }
 
 }
