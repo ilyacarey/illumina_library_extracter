@@ -35,8 +35,10 @@ git clone https://github.com/ilyacarey/illumina_library_extracter.git
 cd REPO
 nextflow run main.nf -profile docker
 
-or
+or remotely (in which case you must have inline barcodes fasta file available):
 
 nextflow run ilyacarey/illumina_library_extracter -profile conda 
+
+
 
 
