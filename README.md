@@ -1,4 +1,4 @@
-This Nextflow pipeline counts library variants per bin inline barcode from raw paired Illumina reads. 
+This Nextflow pipeline counts library variants per bin from raw paired Illumina reads. 
 
 **Key steps:**
 
