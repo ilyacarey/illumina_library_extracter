@@ -168,9 +168,14 @@ process EXTRACT_TFBS {
     tuple val(sample_id), path(bin_fastq)
 
   output:
-    // Added emit: reads
-    tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
-    path "*.extract.log", emit: log
+    // Emit all per-bin outputs together (best for downstream counting + reporting)
+    tuple val(sample_id),
+          path("${bin_fastq.simpleName}.tfbs.fastq.gz"),
+          path("${bin_fastq.simpleName}.untrimmed.fastq.gz"),
+          path("${bin_fastq.simpleName}.too_short.fastq.gz"),
+          path("${bin_fastq.simpleName}.too_long.fastq.gz"),
+          path("${bin_fastq.simpleName}.extract.log"),
+          emit: reads
 
   script:
   """
