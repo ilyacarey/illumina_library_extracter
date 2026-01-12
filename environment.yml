@@ -1,6 +1,13 @@
-name: illumina-tfbs-nf
+name: illumina_library_extracter
 channels:
   - conda-forge
   - bioconda
 dependencies:
   - fastp
+  - flash2
+  - cutadapt
+  - pigz
+  - gawk
+  - coreutils
+  - python
+  - multiqc
