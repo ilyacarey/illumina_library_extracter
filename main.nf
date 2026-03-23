@@ -45,9 +45,8 @@ process FASTP {
     tuple val(sample_id), path(read1), path(read2)
 
   output:
-    // Added emit: reads
     tuple val(sample_id), path("${sample_id}_1.fastp.fastq.gz"), path("${sample_id}_2.fastp.fastq.gz"), path("${sample_id}.fastp.html"), path("${sample_id}.fastp.json"), emit: reads
-    path("*.json"), emit: log 
+    path("*.json"), emit: log
     path("*.html")
 
   script:
@@ -59,6 +58,7 @@ process FASTP {
     --detect_adapter_for_pe \
     --cut_front --cut_tail \
     --cut_window_size 4 \
+    --correction \
     --cut_mean_quality 20 \
     --length_required 50 \
     --n_base_limit 5 \
@@ -68,24 +68,20 @@ process FASTP {
   """
 }
 
-// Renamed process to match workflow call
 process FLASH2_MERGE {
   tag "${sample_id}"
   publishDir "${params.outdir}/02_flash2/${sample_id}", mode: 'copy'
   cpus params.cpus
 
   input:
-    // Input tuple must match the output of FASTP (5 elements) or use just what is needed
     tuple val(sample_id), path(r1), path(r2), path(html), path(json)
 
   output:
-    // Added emit: reads
     tuple val(sample_id), path("${sample_id}.extendedFrags.fastq.gz"), emit: reads
     path "${sample_id}.flash.log", emit: log
 
   script:
   """
-  # Added log redirection (> ... 2>&1) so the log file is actually created
   flash2 \
     -t ${task.cpus} \
     -m ${params.flash_min_overlap} \
@@ -109,7 +105,6 @@ process ORIENT_READS {
     path barcodes
 
   output:
-    // Added emit: reads
     tuple val(sample_id), path("${sample_id}.merged.oriented.fastq.gz"), path("${sample_id}.orient.log"), emit: reads
     path "${sample_id}.orient.log", emit: log
 
@@ -120,6 +115,7 @@ process ORIENT_READS {
     --revcomp \
     --no-trim \
     -g file:${barcodes} \
+    -e ${params.cutadapt_e_orient} \
     -a ${params.orient_3p_anchor} \
     --discard-untrimmed \
     -o ${sample_id}.merged.oriented.fastq.gz \
@@ -138,9 +134,8 @@ process DEMUX {
     path barcodes
 
   output:
-    // Added emit: reads
-    tuple val(sample_id), path("demux/*.fastq.gz"), path("${sample_id}.demux.log"), emit: reads
-    path "${sample_id}.demux.log", emit: log
+      tuple val(sample_id), path("demux/*.fastq.gz"), path("${sample_id}_demux.cutadapt.log"), emit: reads
+      path "${sample_id}_demux.cutadapt.log", emit: log
 
   script:
   """
@@ -148,14 +143,13 @@ process DEMUX {
 
   cutadapt \
     -j ${task.cpus} \
-    --no-indels \
     --overlap 9 \
-    -e 0.1 \
+    -e ${params.cutadapt_e_demux} \
     -g file:${barcodes} \
     -o demux/{name}.fastq.gz \
     --untrimmed-output demux/unknown.fastq.gz \
     ${oriented} \
-    > ${sample_id}.demux.log
+    > ${sample_id}_demux.cutadapt.log
   """
 }
 
@@ -168,9 +162,11 @@ process EXTRACT_TFBS {
     tuple val(sample_id), path(bin_fastq)
 
   output:
-    // Added emit: reads
     tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
     path "*.extract.log", emit: log
+    path "${bin_fastq.simpleName}.untrimmed.fastq.gz",  optional: true
+    path "${bin_fastq.simpleName}.toolong.fastq.gz",    optional: true
+    path "${bin_fastq.simpleName}.tooshort.fastq.gz",   optional: true
 
   script:
   """
@@ -181,7 +177,10 @@ process EXTRACT_TFBS {
     --overlap ${params.extract_overlap} \
     -g "${params.left_flank}...${params.right_flank}" \
     --discard-untrimmed \
-    -m ${params.tfbs_len} -M ${params.tfbs_len} \
+    --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
+    -m ${params.tfbs_min_len} -M ${params.tfbs_max_len} \
+    --too-long-output  ${bin_fastq.simpleName}.toolong.fastq.gz \
+    --too-short-output ${bin_fastq.simpleName}.tooshort.fastq.gz \
     -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
     ${bin_fastq} \
     > ${bin_fastq.simpleName}.extract.log
@@ -238,11 +237,10 @@ process MERGE_COUNTS {
     path("all_bins.counts.tsv")
 
   script:
-  // Using a cleaner bash loop to safely handle list of files
   def files_str = count_files.join(' ')
   """
   set -euo pipefail
-  
+
   # Grab header from first file
   first_file=\$(echo "${files_str}" | awk '{print \$1}')
   head -n 1 \$first_file > all_bins.counts.tsv
@@ -276,16 +274,12 @@ process MULTIQC {
 workflow {
 
   ch_fastp  = FASTP(ch_sample)
-  // Use .reads output specifically
   ch_merged = FLASH2_MERGE(ch_fastp.reads)
 
-  // Use .reads output
   ch_oriented = ORIENT_READS(ch_merged.reads, barcodes_ch)
-  // Use .reads output
   ch_demux    = DEMUX(ch_oriented.reads, barcodes_ch)
 
   // Flatten demux bins, skip unknown
-  // ch_demux.reads is now the tuple containing the file list
   ch_bins = ch_demux.reads.flatMap { sample_id, files, demux_log ->
     files
       .findAll { it.name != 'unknown.fastq.gz' }
@@ -295,7 +289,6 @@ workflow {
   ch_tfbs = EXTRACT_TFBS(ch_bins)
 
   // Derive numeric bin from filename
-  // Use .reads output
   ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, extract_log ->
     def m = (tfbs_fastq.simpleName =~ /(\d+)/)
     def bin = m.find() ? m.group(1) : 'NA'
@@ -309,15 +302,15 @@ workflow {
     .map { sample_id, files -> tuple(sample_id, files) }
     | MERGE_COUNTS
 
-  // 1. Gather logs from all steps
+  // Gather logs from all steps
   ch_reports = Channel.empty()
       .mix(ch_fastp.log)
       .mix(ch_merged.log)
       .mix(ch_oriented.log)
       .mix(ch_demux.log)
       .mix(ch_tfbs.log)
-      .collect() 
+      .collect()
 
-  // 2. Generate Report
+  // Generate Report
   MULTIQC(ch_reports)
 }

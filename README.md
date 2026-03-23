@@ -1,4 +1,4 @@
-This Nextflow pipeline counts library variants per bin from raw paired Illumina reads. 
+This Nextflow pipeline counts library variants per bin from raw paired Illumina reads.
 
 **Key steps:**
 
@@ -10,12 +10,12 @@ This Nextflow pipeline counts library variants per bin from raw paired Illumina 
 
 -cutadapt to demultiplex reads with inline barcodes
 
--cutadapt to extract a library region using flanking sequences
+-cutadapt to extract the library region using 25bp flanking sequences on each side (`left_flank...right_flank`); reads that are untrimmed, too short, or too long are written to separate files for inspection
 
 -a script to count the frequency of each sequence in each bin
 
 
-The final outputs are .tsv files with sequence frequency counts per bin, as well as a .tsv with all the bins merged. 
+The final outputs are .tsv files with sequence frequency counts per bin, as well as a .tsv with all the bins merged.
 A multiqc report is also generated.
 
 
@@ -40,9 +40,9 @@ nextflow run main.nf -profile conda
 
 
 
-or remotely (in which case you must have inline barcodes fasta file available):
+or remotely (in which case you must have the barcodes FASTA file available):
 
-nextflow run ilyacarey/illumina_library_extracter -profile conda 
+nextflow run ilyacarey/illumina_library_extracter -profile conda
 
 
 
