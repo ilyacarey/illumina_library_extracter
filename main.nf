@@ -58,7 +58,6 @@ process FASTP {
     --detect_adapter_for_pe \
     --cut_front --cut_tail \
     --cut_window_size 4 \
-    --correction \
     --cut_mean_quality 20 \
     --length_required 50 \
     --n_base_limit 5 \
@@ -83,6 +82,7 @@ process FLASH2_MERGE {
   script:
   """
   flash2 \
+    -z \
     -t ${task.cpus} \
     -m ${params.flash_min_overlap} \
     -M ${params.flash_max_overlap} \
@@ -90,8 +90,6 @@ process FLASH2_MERGE {
     -p ${params.flash_phred} \
     -o ${sample_id} \
     ${r1} ${r2} > ${sample_id}.flash.log 2>&1
-
-  gzip -f ${sample_id}.extendedFrags.fastq
   """
 }
 
@@ -153,7 +151,7 @@ process DEMUX {
   """
 }
 
-process EXTRACT_TFBS {
+process EXTRACT_LIBRARY {
   tag "${sample_id}:${bin_fastq.simpleName}"
   publishDir "${params.outdir}/05_extract/${sample_id}", mode: 'copy'
   cpus params.cpus
@@ -162,7 +160,7 @@ process EXTRACT_TFBS {
     tuple val(sample_id), path(bin_fastq)
 
   output:
-    tuple val(sample_id), path("${bin_fastq.simpleName}.tfbs.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
+    tuple val(sample_id), path("${bin_fastq.simpleName}.library.fastq.gz"), path("${bin_fastq.simpleName}.extract.log"), emit: reads
     path "*.extract.log", emit: log
     path "${bin_fastq.simpleName}.untrimmed.fastq.gz",  optional: true
     path "${bin_fastq.simpleName}.toolong.fastq.gz",    optional: true
@@ -177,25 +175,25 @@ process EXTRACT_TFBS {
     --overlap ${params.extract_overlap} \
     -g "${params.left_flank}...${params.right_flank}" \
     --untrimmed-output ${bin_fastq.simpleName}.untrimmed.fastq.gz \
-    -m ${params.tfbs_min_len} -M ${params.tfbs_max_len} \
+    -m ${params.lib_min_len} -M ${params.lib_max_len} \
     --too-long-output  ${bin_fastq.simpleName}.toolong.fastq.gz \
     --too-short-output ${bin_fastq.simpleName}.tooshort.fastq.gz \
-    -o ${bin_fastq.simpleName}.tfbs.fastq.gz \
+    -o ${bin_fastq.simpleName}.library.fastq.gz \
     ${bin_fastq} \
     > ${bin_fastq.simpleName}.extract.log
   """
 }
 
-process COUNT_TFBS {
+process COUNT_LIBRARY {
   tag "${sample_id}:bin${bin_num}"
   publishDir "${params.outdir}/06_counts/${sample_id}", mode: 'copy'
   cpus 1
 
   input:
-    tuple val(sample_id), val(bin_num), path(tfbs_fastq)
+    tuple val(sample_id), val(bin_num), path(lib_fastq)
 
   output:
-    tuple val(sample_id), path("${tfbs_fastq.simpleName}.counts.tsv")
+    tuple val(sample_id), path("${lib_fastq.simpleName}.counts.tsv")
 
   script:
   """
@@ -203,12 +201,50 @@ process COUNT_TFBS {
   import gzip
   from collections import Counter
 
-  tfbs_path = "${tfbs_fastq}"
-  out_path  = "${tfbs_fastq.simpleName}.counts.tsv"
+  lib_path = "${lib_fastq}"
+  out_path  = "${lib_fastq.simpleName}.counts.tsv"
   bin_num   = "${bin_num}"
 
   counts = Counter()
-  with gzip.open(tfbs_path, "rt") as fh:
+  with gzip.open(lib_path, "rt") as fh:
+    for i, line in enumerate(fh):
+      if i % 4 == 1:
+        seq = line.strip()
+        if seq:
+          counts[seq] += 1
+
+  with open(out_path, "w") as out:
+    out.write("bin\\tsequence\\tcount\\n")
+    for seq, c in sorted(counts.items(), key=lambda x: (-x[1], x[0])):
+      out.write(f"{bin_num}\\t{seq}\\t{c}\\n")
+  PY
+  """
+}
+
+
+process COUNT_WHOLE_READS {
+  tag "${sample_id}:bin${bin_num}"
+  publishDir "${params.outdir}/06_whole_counts/${sample_id}", mode: 'copy'
+  cpus 1
+
+  input:
+    tuple val(sample_id), val(bin_num), path(fastq)
+
+  output:
+    tuple val(sample_id), path("${fastq.simpleName}.counts.tsv")
+
+  script:
+  """
+  python - << 'PY'
+  import gzip
+  from collections import Counter
+
+  fastq_path = "${fastq}"
+  out_path   = "${fastq.simpleName}.counts.tsv"
+  bin_num    = "${bin_num}"
+
+  counts = Counter()
+  with gzip.open(fastq_path, "rt") as fh:
     for i, line in enumerate(fh):
       if i % 4 == 1:
         seq = line.strip()
@@ -227,6 +263,34 @@ process COUNT_TFBS {
 process MERGE_COUNTS {
   tag "${sample_id}"
   publishDir "${params.outdir}/07_merged_counts/${sample_id}", mode: 'copy'
+  cpus 1
+
+  input:
+    tuple val(sample_id), path(count_files)
+
+  output:
+    path("all_bins.counts.tsv")
+
+  script:
+  def files_str = count_files.join(' ')
+  """
+  set -euo pipefail
+
+  # Grab header from first file
+  first_file=\$(echo "${files_str}" | awk '{print \$1}')
+  head -n 1 \$first_file > all_bins.counts.tsv
+
+  # Loop and skip header
+  for f in ${files_str}; do
+    tail -n +2 "\$f" >> all_bins.counts.tsv
+  done
+  """
+}
+
+
+process MERGE_WHOLE_COUNTS {
+  tag "${sample_id}"
+  publishDir "${params.outdir}/07_merged_whole_counts/${sample_id}", mode: 'copy'
   cpus 1
 
   input:
@@ -285,31 +349,44 @@ workflow {
       .collect { f -> tuple(sample_id, f) }
   }
 
-  ch_tfbs = EXTRACT_TFBS(ch_bins)
-
-  // Derive numeric bin from filename
-  ch_counts_in = ch_tfbs.reads.map { sample_id, tfbs_fastq, extract_log ->
-    def m = (tfbs_fastq.simpleName =~ /(\d+)/)
-    def bin = m.find() ? m.group(1) : 'NA'
-    tuple(sample_id, bin, tfbs_fastq)
+  // Count whole (demuxed) reads per bin
+  if (params.count_whole_reads) {
+    ch_bins_numbered = ch_bins.map { sample_id, bin_fastq ->
+      def m = (bin_fastq.simpleName =~ /(\d+)/)
+      def bin = m.find() ? m.group(1) : 'NA'
+      tuple(sample_id, bin, bin_fastq)
+    }
+    COUNT_WHOLE_READS(ch_bins_numbered)
+      .groupTuple()
+      .map { sample_id, files -> tuple(sample_id, files) }
+      | MERGE_WHOLE_COUNTS
   }
 
-  ch_counts = COUNT_TFBS(ch_counts_in)
-
-  ch_counts
-    .groupTuple()
-    .map { sample_id, files -> tuple(sample_id, files) }
-    | MERGE_COUNTS
-
-  // Gather logs from all steps
+  // Gather base logs
   ch_reports = Channel.empty()
       .mix(ch_fastp.log)
       .mix(ch_merged.log)
       .mix(ch_oriented.log)
       .mix(ch_demux.log)
-      .mix(ch_tfbs.log)
-      .collect()
+
+  // Extract library region and count per bin
+  if (params.count_library) {
+    ch_lib = EXTRACT_LIBRARY(ch_bins)
+
+    ch_lib.reads
+      .map { sample_id, lib_fastq, extract_log ->
+        def m = (lib_fastq.simpleName =~ /(\d+)/)
+        def bin = m.find() ? m.group(1) : 'NA'
+        tuple(sample_id, bin, lib_fastq)
+      }
+      | COUNT_LIBRARY
+      | groupTuple
+      | map { sample_id, files -> tuple(sample_id, files) }
+      | MERGE_COUNTS
+
+    ch_reports = ch_reports.mix(ch_lib.log)
+  }
 
   // Generate Report
-  MULTIQC(ch_reports)
+  MULTIQC(ch_reports.collect())
 }
